@@ -1,0 +1,40 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+build/
+dist/
+
+# Virtual environments
+venv/
+.venv/
+env/
+ENV/
+
+# Streamlit
+.streamlit/secrets.toml
+
+# Jupyter
+.ipynb_checkpoints/
+
+# OS junk
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor/IDE
+.vscode/
+.idea/
+
+# Trained models & exports (usually large / regenerable — remove this if you WANT to commit them)
+*.pkl
+*.joblib
+
+# Sample/uploaded data (avoid committing client data by accident)
+*.csv
+*.xlsx
+*.xls
+!requirements.txt
