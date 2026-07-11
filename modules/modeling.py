@@ -21,6 +21,7 @@ from sklearn.metrics import (
     silhouette_score
 )
 from sklearn.preprocessing import StandardScaler
+from sklearn.decomposition import PCA
 
 from modules.plot_utils import download_chart_button
 
@@ -108,6 +109,56 @@ def _benchmark_models(work_df, features, target, model_dict, task):
     return result_df, failed
 
 
+def _rank_features_supervised(df, candidate_features, target, task):
+    """Quick Random Forest importance ranking — works as a rough guide for either regression or classification."""
+    numeric_candidates = [c for c in candidate_features if pd.api.types.is_numeric_dtype(df[c])]
+    if not numeric_candidates:
+        return pd.DataFrame(columns=["Feature", "Importance"])
+
+    work = df[numeric_candidates + [target]].dropna()
+    if len(work) < 10:
+        return pd.DataFrame(columns=["Feature", "Importance"])
+
+    X, y = work[numeric_candidates], work[target]
+    try:
+        if task == "Supervised: Regression":
+            if not pd.api.types.is_numeric_dtype(y):
+                return pd.DataFrame(columns=["Feature", "Importance"])
+            model = RandomForestRegressor(n_estimators=200, max_depth=8, random_state=42)
+        else:
+            model = RandomForestClassifier(n_estimators=200, max_depth=8, random_state=42)
+        model.fit(X, y)
+        result = pd.DataFrame({"Feature": numeric_candidates, "Importance": model.feature_importances_})
+        return result.sort_values("Importance", ascending=False).reset_index(drop=True)
+    except Exception:
+        return pd.DataFrame(columns=["Feature", "Importance"])
+
+
+def _rank_features_clustering(df, candidate_features):
+    """No target exists for clustering, so 'importance' isn't well defined the usual way.
+    Instead, rank numeric columns by how much they drive variation in the data (via PCA loadings)."""
+    numeric_candidates = [c for c in candidate_features if pd.api.types.is_numeric_dtype(df[c])]
+    if len(numeric_candidates) < 2:
+        return pd.DataFrame(columns=["Feature", "Influence"])
+
+    work = df[numeric_candidates].dropna()
+    if len(work) < 10:
+        return pd.DataFrame(columns=["Feature", "Influence"])
+
+    try:
+        X = StandardScaler().fit_transform(work)
+        n_components = min(2, X.shape[1])
+        pca = PCA(n_components=n_components, random_state=42)
+        pca.fit(X)
+        loadings = np.abs(pca.components_)               # (n_components, n_features)
+        weights = pca.explained_variance_ratio_           # (n_components,)
+        influence = loadings.T @ weights                  # (n_features,)
+        result = pd.DataFrame({"Feature": numeric_candidates, "Influence": influence})
+        return result.sort_values("Influence", ascending=False).reset_index(drop=True)
+    except Exception:
+        return pd.DataFrame(columns=["Feature", "Influence"])
+
+
 def _model_download_section(model, model_name):
     st.subheader("Export Trained Model")
     export_format = st.radio("File format", ["Pickle (.pkl)", "Joblib (.joblib)"],
@@ -137,7 +188,46 @@ def _supervised(df, task):
     all_cols = df.columns.tolist()
     target = st.selectbox("Target column (what you want to predict)", all_cols)
     feature_options = [c for c in all_cols if c != target]
-    features = st.multiselect("Feature columns", feature_options, default=feature_options)
+
+    features_key = f"features_select_{task}"
+    if features_key not in st.session_state:
+        st.session_state[features_key] = feature_options
+    else:
+        st.session_state[features_key] = [f for f in st.session_state[features_key] if f in feature_options]
+
+    with st.expander("🔍 Discover which features matter most (optional)"):
+        st.caption("Runs a quick Random Forest to estimate how useful each candidate column is for predicting "
+                   "**" + target + "**. This is a suggestion, not a rule — accept it, tweak it, or ignore it "
+                   "and pick features manually below. Only numeric candidate columns can be ranked; "
+                   "encode categorical ones first if you want them included.")
+        if st.button("Rank feature importance", key=f"rank_features_btn_{task}"):
+            with st.spinner("Ranking features..."):
+                st.session_state[f"feature_importance_{task}"] = _rank_features_supervised(
+                    df, feature_options, target, task
+                )
+        if f"feature_importance_{task}" in st.session_state:
+            imp_df = st.session_state[f"feature_importance_{task}"]
+            if imp_df.empty:
+                st.warning("Couldn't rank features — make sure candidate columns are numeric and there's "
+                           "enough non-missing data.")
+            else:
+                st.dataframe(imp_df, use_container_width=True, hide_index=True)
+                fig, ax = plt.subplots(figsize=(6, max(2, len(imp_df) * 0.4)))
+                ax.barh(imp_df["Feature"], imp_df["Importance"], color="#3d5a80")
+                ax.invert_yaxis()
+                ax.set_xlabel("Estimated importance")
+                ax.set_title("Feature Importance (suggestion)")
+                st.pyplot(fig)
+                download_chart_button(fig, "feature_importance_suggestion.png", key=f"dl_feat_rank_{task}")
+                plt.close(fig)
+
+                top_n = st.slider("How many top features to use?", 1, len(imp_df),
+                                   min(5, len(imp_df)), key=f"top_n_{task}")
+                if st.button(f"✅ Use top {top_n} suggested feature(s)", key=f"use_feat_suggest_{task}"):
+                    st.session_state[features_key] = imp_df["Feature"].head(top_n).tolist()
+                    st.rerun()
+
+    features = st.multiselect("Feature columns", feature_options, key=features_key)
 
     if not features:
         st.warning("Select at least one feature column.")
@@ -374,7 +464,44 @@ def _render_results(task):
 
 def _clustering(df, num_cols):
     st.subheader("1. Select Features")
-    features = st.multiselect("Feature columns (numeric)", num_cols, default=num_cols[:min(4, len(num_cols))])
+
+    features_key = "cluster_features_select"
+    default_features = num_cols[:min(4, len(num_cols))]
+    if features_key not in st.session_state:
+        st.session_state[features_key] = default_features
+    else:
+        st.session_state[features_key] = [f for f in st.session_state[features_key] if f in num_cols]
+
+    with st.expander("🔍 Discover which features matter most (optional)"):
+        st.caption("Clustering has no target column, so 'importance' isn't defined the same way it is for "
+                   "regression or classification. This instead ranks numeric columns by how much they drive "
+                   "variation in the data (via PCA) — columns with higher influence tend to have a bigger "
+                   "effect on which cluster a row lands in. Accept it, tweak it, or pick manually below.")
+        if st.button("Rank feature influence", key="rank_cluster_features_btn"):
+            with st.spinner("Ranking features..."):
+                st.session_state["cluster_feature_influence"] = _rank_features_clustering(df, num_cols)
+        if "cluster_feature_influence" in st.session_state:
+            inf_df = st.session_state["cluster_feature_influence"]
+            if inf_df.empty:
+                st.warning("Couldn't rank features — need at least 2 numeric columns with enough non-missing data.")
+            else:
+                st.dataframe(inf_df, use_container_width=True, hide_index=True)
+                fig, ax = plt.subplots(figsize=(6, max(2, len(inf_df) * 0.4)))
+                ax.barh(inf_df["Feature"], inf_df["Influence"], color="#98c1d9")
+                ax.invert_yaxis()
+                ax.set_xlabel("Estimated influence")
+                ax.set_title("Feature Influence on Clustering (PCA-based)")
+                st.pyplot(fig)
+                download_chart_button(fig, "cluster_feature_influence.png", key="dl_cluster_feat_influence")
+                plt.close(fig)
+
+                top_n = st.slider("How many top features to use?", 2, len(inf_df),
+                                   min(4, len(inf_df)), key="cluster_top_n")
+                if st.button(f"✅ Use top {top_n} suggested feature(s)", key="use_cluster_feat_suggest"):
+                    st.session_state[features_key] = inf_df["Feature"].head(top_n).tolist()
+                    st.rerun()
+
+    features = st.multiselect("Feature columns (numeric)", num_cols, key=features_key)
     if len(features) < 2:
         st.warning("Select at least 2 numeric feature columns.")
         return
