@@ -13,7 +13,7 @@ def render():
     c2.metric("Cleaned shape", f"{df.shape[0]} × {df.shape[1]}")
 
     st.subheader("Preview")
-    st.dataframe(df.head(20), use_container_width=True)
+    st.dataframe(df.head(20), width='stretch')
 
     st.subheader("Download")
     base_name = (st.session_state.filename or "dataset").rsplit(".", 1)[0]
@@ -26,7 +26,7 @@ def render():
             data=csv_bytes,
             file_name=f"{base_name}_cleaned.csv",
             mime="text/csv",
-            use_container_width=True,
+            width='stretch',
         )
     with col2:
         buffer = io.BytesIO()
@@ -37,10 +37,10 @@ def render():
             data=buffer.getvalue(),
             file_name=f"{base_name}_cleaned.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            use_container_width=True,
+            width='stretch',
         )
 
     if st.session_state.history:
         with st.expander("📝 Cleaning steps applied this session"):
-            for i, (action, _) in enumerate(st.session_state.history, 1):
+            for i, (action, _, _) in enumerate(st.session_state.history, 1):
                 st.write(f"{i}. {action}")

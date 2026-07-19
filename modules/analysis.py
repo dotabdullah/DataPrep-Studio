@@ -26,7 +26,7 @@ def render():
             "Null Count": df.isna().sum().values,
             "Unique Values": [df[c].nunique() for c in df.columns],
         })
-        st.dataframe(dtype_df, use_container_width=True, hide_index=True)
+        st.dataframe(dtype_df, width='stretch', hide_index=True)
 
         num_cols = df.select_dtypes(include=np.number).columns.tolist()
         cat_cols = df.select_dtypes(exclude=np.number).columns.tolist()
@@ -43,7 +43,7 @@ def render():
             "Missing %": missing_pct.values
         }).sort_values("Missing Count", ascending=False)
 
-        st.dataframe(miss_df, use_container_width=True, hide_index=True)
+        st.dataframe(miss_df, width='stretch', hide_index=True)
 
         cols_with_missing = miss_df[miss_df["Missing Count"] > 0]
         if not cols_with_missing.empty:
@@ -65,7 +65,7 @@ def render():
         if dup_count > 0:
             st.write("Preview of duplicated rows:")
             st.dataframe(df[df.duplicated(keep=False)].sort_values(by=df.columns[0]),
-                         use_container_width=True)
+                         width='stretch')
             st.caption("Go to the **Clean Data** page to remove duplicates.")
         else:
             st.success("No duplicate rows found! ✅")
@@ -85,4 +85,4 @@ def render():
                 st.write(f"**Std Dev:** {df[col].std():.4f}")
         with c2:
             st.write("**Top value counts:**")
-            st.dataframe(df[col].value_counts().head(10).rename("count"), use_container_width=True)
+            st.dataframe(df[col].value_counts().head(10).rename("count"), width='stretch')

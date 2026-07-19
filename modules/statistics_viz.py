@@ -4,6 +4,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 from modules.plot_utils import download_chart_button
+from modules.report import generate_html_report
 
 
 def render():
@@ -12,18 +13,18 @@ def render():
     num_cols = df.select_dtypes(include=np.number).columns.tolist()
     cat_cols = df.select_dtypes(exclude=np.number).columns.tolist()
 
-    tabs = st.tabs(["Summary Statistics", "Distributions", "Correlation", "Categorical Breakdown"])
+    tabs = st.tabs(["Summary Statistics", "Distributions", "Correlation", "Categorical Breakdown", "Full Report"])
 
     with tabs[0]:
         st.subheader("Descriptive Statistics (numeric columns)")
         if num_cols:
-            st.dataframe(df[num_cols].describe().T, use_container_width=True)
+            st.dataframe(df[num_cols].describe().T, width='stretch')
         else:
             st.info("No numeric columns found.")
 
         st.subheader("Descriptive Statistics (categorical columns)")
         if cat_cols:
-            st.dataframe(df[cat_cols].describe().T, use_container_width=True)
+            st.dataframe(df[cat_cols].describe().T, width='stretch')
         else:
             st.info("No categorical columns found.")
 
@@ -91,4 +92,28 @@ def render():
             st.pyplot(fig)
             download_chart_button(fig, f"category_counts_{col}.png", key=f"dl_cat_{col}")
             plt.close(fig)
-            st.dataframe(counts.rename("count"), use_container_width=True)
+            st.dataframe(counts.rename("count"), width='stretch')
+
+    with tabs[4]:
+        st.subheader("Full Data Profiling Report")
+        st.caption("Generates a single downloadable HTML file combining column overview, missing values, "
+                   "summary statistics, correlation heatmap, distributions, and categorical breakdowns — "
+                   "everything on this page, bundled into one shareable report.")
+        if st.button("📄 Generate report", type="primary"):
+            with st.spinner("Building report..."):
+                filename = st.session_state.get("filename") or "dataset"
+                html = generate_html_report(df, filename)
+                st.session_state["profiling_report_html"] = html
+
+        if "profiling_report_html" in st.session_state:
+            base_name = (st.session_state.get("filename") or "dataset").rsplit(".", 1)[0]
+            st.success("Report ready.")
+            st.download_button(
+                "⬇️ Download report (.html)",
+                data=st.session_state["profiling_report_html"].encode("utf-8"),
+                file_name=f"{base_name}_profiling_report.html",
+                mime="text/html",
+                key="dl_profiling_report",
+            )
+            with st.expander("Preview report"):
+                st.iframe(st.session_state["profiling_report_html"], height=600)

@@ -42,7 +42,7 @@ def render():
                 st.rerun()
 
             st.caption("Quick look before loading:")
-            st.dataframe(df.head(10), use_container_width=True)
+            st.dataframe(df.head(10), width='stretch')
 
         except Exception as e:
             st.error(f"Could not read this file: {e}")
@@ -65,7 +65,7 @@ def render():
                 st.caption(f"Showing all {total_rows} row(s) — too few rows for a slider.")
             else:
                 n = st.slider("Rows to preview", 5, min(100, total_rows), min(10, total_rows))
-            st.dataframe(df.head(n), use_container_width=True)
+            st.dataframe(df.head(n), width='stretch')
 
         if st.button("🗑️ Clear dataset and start over"):
             for key in ["raw_df", "df", "filename", "history", "trained_model", "model_info"]:
